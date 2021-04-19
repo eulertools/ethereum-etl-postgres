@@ -59,7 +59,7 @@ create table logs
     transaction_index bigint,
     block_hash varchar(66),
     block_number bigint,
-    address varchar(42), -- from 42 to 100
+    address varchar(42),
     data text,
     topics text -- added column, also we need to transform data to array, I changed from text[] to text (missing in original schema) we need to change how we generate this "value1,value,value3" to "{{value1,value2,value3}}"
     -- topic0 varchar(66), -- removed (not present on CSVs)
