@@ -15,25 +15,37 @@ if [ -n "${start_date}" ] && [ -n "${end_date}" ]; then
     filter_date=true
 fi
 
-# The logs table has topics column with type ARRAY<STRING>. BigQuery can't export it to CSV so we need to flatten it.
+# The logs and contracts tables contain columns with type ARRAY<STRING>. 
+# BigQuery can't export it to CSV so we need to flatten it.
 export_temp_dataset="export_temp_dataset"
 export_temp_logs_table="flattened_logs"
+export_temp_contracts_table="flattened_contracts"
+
 bq rm -r -f ${export_temp_dataset}
 bq mk ${export_temp_dataset}
 
-flatten_crypto_ethereum_logs_sql=$(cat ./flatten_crypto_ethereum_logs.sql | tr '\n' ' ')
+# Use awk to trim comments in sql files.
+flatten_crypto_ethereum_logs_sql=$(cat ./flatten_crypto_ethereum_logs.sql | awk -F '--' '{print $1}'| tr '\n' ' ')
+flatten_crypto_ethereum_contracts_sql=$(cat ./flatten_crypto_ethereum_contracts.sql | awk -F '--' '{print $1}' |  tr '\n' ' ')
+
 if [ "${filter_date}" = "true" ]; then
     flatten_crypto_ethereum_logs_sql="${flatten_crypto_ethereum_logs_sql} where date(block_timestamp) >= '${start_date}' and date(block_timestamp) <= '${end_date}'"
+    flatten_crypto_ethereum_contracts_sql="${flatten_crypto_ethereum_contracts_sql} where date(block_timestamp) >= '${start_date}' and date(block_timestamp) <= '${end_date}'"
 fi
+
 echo "Executing query ${flatten_crypto_ethereum_logs_sql}"
 bq --location=US query --destination_table ${export_temp_dataset}.${export_temp_logs_table} --use_legacy_sql=false "${flatten_crypto_ethereum_logs_sql}"
+echo "Executing query ${flatten_crypto_ethereum_contracts_sql}"
+bq --location=US query --destination_table ${export_temp_dataset}.${export_temp_contracts_table} --use_legacy_sql=false "${flatten_crypto_ethereum_contracts_sql}"
 
 declare -a tables=(
     "bigquery-public-data:crypto_ethereum.blocks"
     "bigquery-public-data:crypto_ethereum.transactions"
     "bigquery-public-data:crypto_ethereum.token_transfers"
     "bigquery-public-data:crypto_ethereum.traces"
+    "bigquery-public-data:crypto_ethereum.tokens"
     "${export_temp_dataset}.${export_temp_logs_table}"
+    "${export_temp_dataset}.${export_temp_contracts_table}"
 )
 
 for table in "${tables[@]}"
@@ -59,8 +71,9 @@ do
     fi
 done
 
-# Rename output folder for flattened logs
+# Rename output folder for flattened tables
 gsutil -m mv gs://${output_bucket}/${export_temp_dataset}.${export_temp_logs_table}/* gs://${output_bucket}/bigquery-public-data:crypto_ethereum.logs/
+gsutil -m mv gs://${output_bucket}/${export_temp_dataset}.${export_temp_contracts_table}/* gs://${output_bucket}/bigquery-public-data:crypto_ethereum.contracts/
 
 # Cleanup
 bq rm -r -f ${export_temp_dataset}
